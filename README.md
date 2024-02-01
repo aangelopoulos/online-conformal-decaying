@@ -2,7 +2,7 @@
 Anastasios N. Angelopoulos, Rina F. Barber, Stephen Bates
 
 This is a lightweight codebase used to reproduce the experiments in our paper.
-To run it, you will need the following dependencies
+To run it, you will need the following dependencies:
 ```
 jupyter
 numpy
