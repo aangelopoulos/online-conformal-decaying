@@ -5,14 +5,28 @@ app = marimo.App()
 
 
 @app.cell
-def __():
+def __(__file__):
+    import os, sys
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     import marimo as mo
     import numpy as np
     import matplotlib.pyplot as plt
     import pandas as pd
     import seaborn as sns
     from warnings import simplefilter 
-    return mo, np, pd, plt, simplefilter, sns
+    from core import get_online_quantile, dtACI
+    return (
+        dtACI,
+        get_online_quantile,
+        mo,
+        np,
+        os,
+        pd,
+        plt,
+        simplefilter,
+        sns,
+        sys,
+    )
 
 
 @app.cell
@@ -23,7 +37,32 @@ def __(pd):
 
 
 @app.cell
-def __(data, pd, plt, sns):
+def __():
+    y_columns = [f"V{j}" for j in range(2, 9921)]
+    pred_columns = [f"Vhat{j}" for j in range(2, 9921)]
+    score_columns = [f"S{j}" for j in range(2, 9921)]
+    return pred_columns, score_columns, y_columns
+
+
+@app.cell
+def __(data, score_columns):
+    scores = data[score_columns].iloc[0].dropna().values
+    scores
+    return scores,
+
+
+@app.cell
+def __(dtACI, get_online_quantile, np, scores):
+    etas = np.ones_like(scores)
+    alpha=0.1
+    q_quantile_tracker = get_online_quantile(scores, scores[0], etas, alpha)
+    q_dtACI = dtACI(scores, alpha)
+    q_dtACI
+    return alpha, etas, q_dtACI, q_quantile_tracker
+
+
+@app.cell
+def __(data, pd, plt, pred_columns, score_columns, sns, y_columns):
     # for each column in the dataframe, loop through and plot a rolling average over 30 points
     horizon=14
     rolling=30
@@ -31,9 +70,6 @@ def __(data, pd, plt, sns):
     sns.set_palette(sns.color_palette("pastel"))
     sns.set_context("talk")
     sns.set_style("white")
-    y_columns = [f"V{j}" for j in range(2, 9921)]
-    pred_columns = [f"Vhat{j}" for j in range(2, 9921)]
-    score_columns = [f"S{j}" for j in range(2, 9921)]
 
     for _i, _row in data.iterrows():
         print(_i)
@@ -59,16 +95,7 @@ def __(data, pd, plt, sns):
             ax.locator_params(axis='y', nbins=3)
         plt.tight_layout()
         plt.show()
-    return (
-        ax,
-        axs,
-        fig,
-        horizon,
-        pred_columns,
-        rolling,
-        score_columns,
-        y_columns,
-    )
+    return ax, axs, fig, horizon, rolling
 
 
 if __name__ == "__main__":

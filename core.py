@@ -23,9 +23,9 @@ def get_online_quantile(scores, q_1, etas, alpha):
             q[t + 1] = q[t] - etas[t] * (alpha - err_t)
     return q
 
-def dtACI(scores, alpha, gammas=[0.001,0.005,0.01,0.05,0.1,0.2,0.5,1]): # param1 is sigma in dtACI work, param2 is eta in dtACI work
+def dtACI(scores, alpha, gammas=[0.0001,0.001,0.01]): # param1 is sigma in dtACI work, param2 is eta in dtACI work
     T = scores.shape[0]
-    K = len(alphat_inits)
+    K = len(gammas)
     q = np.zeros(T)
     # Copy the initial alpha values
     alphat_inits = np.ones_like(gammas) * alpha
@@ -42,15 +42,24 @@ def dtACI(scores, alpha, gammas=[0.001,0.005,0.01,0.05,0.1,0.2,0.5,1]): # param1
     for t in range(1, T + 1):
         score = scores[t]
 
+        ### Prediction steps
         # Calculate probabilities based on weights
         probabilities = weights / np.sum(weights)
 
         # Output alpha_t with the calculated probability
         alpha_t = np.random.choice(alphats, p=probabilities)
 
+        # Form the prediction set based on the alpha_t
+        q[t] = np.quantile(scores[:t], np.clip(1-alpha_t,0,1), method="higher")
+
+        # Check coverage
+        err_t = score > q[t]
+
+        ### Update steps
         # Update weights based on the pinball loss between the score and alpha[i]
+        beta_t = 1-((scores[:t] <= score).sum() / t)
         for i in range(K):
-            loss = pinball_loss(score, alpha_t, 1-alpha)
+            loss = pinball_loss(np.clip(beta_t,0,1), alpha_t, 1-alpha)
             weights[i] *= np.exp(-param2 * loss)
 
 
@@ -60,11 +69,12 @@ def dtACI(scores, alpha, gammas=[0.001,0.005,0.01,0.05,0.1,0.2,0.5,1]): # param1
         # Update weights with a regularization term involving sigma
         weights = (1 - param1) * weights + W_t * param1 / K
 
-        err_t = np.array([score <= np.quantile(scores[:t], 1-alphats[i], method="higher") for i in range(K)])
-        q = np.quantile(scores[:t], 1-alpha_t, method="higher")
+        q_hypotheticals = [np.quantile(scores[:t], np.clip(1-alphats[i],0,1), method="higher") for i in range(K)]
+
+        err_t_hypotheticals = np.array([score > q_hypotheticals[i] for i in range(K)])
 
         # Adjust alpha for the next time step based on the errors
-        for i in range(k):
-            alphats[i] += gammas[i] * (alpha - err_t[i])
+        for i in range(K):
+            alphats[i] += gammas[i] * (alpha - err_t_hypotheticals[i])
 
     return q
