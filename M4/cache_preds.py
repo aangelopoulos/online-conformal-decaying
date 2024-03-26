@@ -1,4 +1,5 @@
-import os
+import os, sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import marimo as mo
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,12 +11,15 @@ from darts.models.forecasting.nbeats import NBEATSModel
 from tqdm import tqdm
 import multiprocessing as mp
 from warnings import simplefilter
+from core import get_online_quantile, get_online_quantile_adaptive, dtACI
+import pdb
 
 if __name__ == "__main__":
     # Parameters
     horizon = 14
     total_length = 9920+1 # Determined by original dataframe
     modelname = "Theta"
+    alpha = 0.1
 
     # Load data
     data = pd.read_csv('Daily-train.csv')
@@ -35,7 +39,7 @@ if __name__ == "__main__":
         _x = pd.date_range(start=_row['StartingDate'], periods=len(_y))
         _ts = TimeSeries.from_times_and_values(_x,_y)
         series[_row["M4id"]] = _ts
-        if _i > 20:
+        if _i == 100:
             break
 
     # Make predictions
@@ -60,6 +64,28 @@ if __name__ == "__main__":
     simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
     for j in range(2, 9921):
         data[f"S{j}"] = (data[f"V{j}"] - data[f"Vhat{j}"]).abs()
+
+    score_columns = [f"S{j}" for j in range(2, 9921)]
+    # For each series, calculate the quantiles
+    for i in range(len(data)):
+        scores = data.iloc[i][score_columns].dropna().values
+        etas = scores.max()*np.ones_like(scores)/(np.arange(1, len(scores)+1)**(0.51))
+        etas_fixed = 0.1*scores.max()*np.ones_like(scores)
+        q_fixed = get_online_quantile(scores, scores[0], etas_fixed, alpha)
+        q_decaying = get_online_quantile(scores, scores[0], etas, alpha)
+        q_adaptive = get_online_quantile_adaptive(scores, scores[0], alpha)
+        q_dtACI = dtACI(scores, alpha)
+        for j in range(2, 9921):
+            try:
+                data.at[i,f"q_adaptive{j}"] = q_adaptive[j-2]
+                data.at[i,f"q_decaying{j}"] = q_decaying[j-2]
+                data.at[i,f"q_fixed{j}"] = q_fixed[j-2]
+                data.at[i,f"q_dtACI{j}"] = q_dtACI[j-2]
+            except:
+                data.at[i,f"q_adaptive{j}"] = np.NaN
+                data.at[i,f"q_decaying{j}"] = np.NaN
+                data.at[i,f"q_fixed{j}"] = np.NaN
+                data.at[i,f"q_dtACI{j}"] = np.NaN
 
 
     # Save predictions
