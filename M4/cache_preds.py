@@ -11,7 +11,7 @@ from darts.models.forecasting.nbeats import NBEATSModel
 from tqdm import tqdm
 import multiprocessing as mp
 from warnings import simplefilter
-from core import get_online_quantile, get_online_quantile_adaptive, dtACI
+from core import get_online_quantile, get_online_quantile_decay_and_adapt, dtACI
 import pdb
 
 if __name__ == "__main__":
@@ -73,7 +73,7 @@ if __name__ == "__main__":
         etas_fixed = 0.1*scores.max()*np.ones_like(scores)
         q_fixed = get_online_quantile(scores, scores[0], etas_fixed, alpha)
         q_decaying = get_online_quantile(scores, scores[0], etas, alpha)
-        q_adaptive = get_online_quantile_adaptive(scores, scores[0], alpha)
+        q_adaptive = get_online_quantile_decay_and_adapt(scores, scores[0], alpha)
         q_dtACI = dtACI(scores, alpha)
         for j in range(2, 9921):
             try:

@@ -13,7 +13,7 @@ def __(__file__):
     import matplotlib.pyplot as plt
     import pandas as pd
     import seaborn as sns
-    from warnings import simplefilter 
+    from warnings import simplefilter
     return mo, np, os, pd, plt, simplefilter, sns, sys
 
 
@@ -47,6 +47,7 @@ def __():
 @app.cell
 def __(
     data,
+    np,
     pd,
     q_adaptive_columns,
     q_decaying_columns,
@@ -58,37 +59,57 @@ def __(
     metrics = []
     for _i, _row in data.iterrows():
         _id = _row["M4id"]
-        _scores = _row[score_columns].dropna().values
-        _q_adaptive = _row[q_adaptive_columns].dropna().values
-        _q_decaying = _row[q_decaying_columns].dropna().values
-        _q_fixed = _row[q_fixed_columns].dropna().values
-        _q_dtACI = _row[q_dtACI_columns].dropna().values
+        _scores = _row[score_columns].values.astype(float)
+        _q_adaptive = _row[q_adaptive_columns].values.astype(float)
+        _q_decaying = _row[q_decaying_columns].values.astype(float)
+        _q_fixed = _row[q_fixed_columns].values.astype(float)
+        _q_dtACI = _row[q_dtACI_columns].values.astype(float)
+        _idx_non_na = (
+            ~np.isnan(_scores) &
+            ~np.isnan(_q_adaptive) &
+            ~np.isnan(_q_decaying) &
+            ~np.isnan(_q_fixed) &
+            ~np.isnan(_q_dtACI)
+        )
+        _scores = _scores[_idx_non_na]; _q_adaptive = _q_adaptive[_idx_non_na]; _q_decaying = _q_decaying[_idx_non_na]; _q_fixed = _q_fixed[_idx_non_na]; _q_dtACI = _q_dtACI[_idx_non_na];
         metrics += [pd.DataFrame([{
             "id" : _id,
-            "method" : "adaptive",
+            "method" : "decay+adapt",
+            "size inflation" : (np.clip(_q_adaptive/(_scores+1e-9),0,100)).mean(),
             "coverage" : (_scores <= _q_adaptive).mean(),
             "variance" : (_q_adaptive.var())/(_scores.var()),
+            "MSE" : (((_q_adaptive - _scores)/_scores.std())**2).mean(),
+            "infinite sets" : (_q_adaptive > np.quantile(_scores,0.999)).mean()
         }])]
         metrics += [pd.DataFrame([{
             "id" : _id,
             "method" : "decaying",
+            "size inflation" : (np.clip(_q_decaying/(_scores+1e-9),0,100)).mean(),
             "coverage" : (_scores <= _q_decaying).mean(),
             "variance" : (_q_decaying.var())/(_scores.var()),
+            "MSE" : (((_q_decaying - _scores)/_scores.std())**2).mean(),
+            "infinite sets" : (_q_decaying > np.quantile(_scores,0.999)).mean()
         }])]
         metrics += [pd.DataFrame([{
             "id" : _id,
             "method" : "fixed",
+            "size inflation" : (np.clip(_q_fixed/(_scores+1e-9),0,100)).mean(),
             "coverage" : (_scores <= _q_fixed).mean(),
             "variance" : (_q_fixed.var())/(_scores.var()),
+            "MSE" : (((_q_fixed - _scores)/_scores.std())**2).mean(),
+            "infinite sets" : (_q_fixed > np.quantile(_scores,0.999)).mean()
         }])]
         metrics += [pd.DataFrame([{
             "id" : _id, 
             "method" : "DTACI",
+            "size inflation" : (np.clip(_q_dtACI/(_scores+1e-9),0,100)).mean(),
             "coverage" : (_scores <= _q_dtACI).mean(),
             "variance" : (_q_dtACI.var())/(_scores.var()),
+            "MSE" : (((_q_dtACI - _scores)/_scores.std())**2).mean(),
+            "infinite sets" : (_q_dtACI > np.quantile(_scores,0.999)).mean()
         }])]
 
-    metrics = pd.concat(metrics)
+    metrics = pd.concat(metrics).drop("size inflation", axis=1)
     return metrics,
 
 
@@ -96,6 +117,48 @@ def __(
 def __(metrics):
     metrics.to_markdown(index=False)
     return
+
+
+@app.cell
+def __(metrics):
+    avg_metrics = metrics.drop("id", axis=1).groupby(by=["method"]).mean().reset_index()
+    avg_metrics
+    return avg_metrics,
+
+
+@app.cell
+def __(avg_metrics):
+    avg_metrics.to_markdown(index=False)
+    return
+
+
+@app.cell
+def __(metrics, plt, sns):
+    mse_kdeplot = sns.kdeplot(data=metrics,x="MSE",hue="method", clip=(0,None), fill=True, cut=0)
+    plt.tight_layout()
+    sns.despine(top=True,right=True)
+    mse_kdeplot
+    return mse_kdeplot,
+
+
+@app.cell
+def __(metrics, plt, sns):
+    var_kdeplot = sns.kdeplot(data=metrics,x="variance",hue="method", clip=(0,None), fill=True, cut=0)
+    plt.xlim([0,20])
+    plt.tight_layout()
+    sns.despine(top=True,right=True)
+    var_kdeplot
+    return var_kdeplot,
+
+
+@app.cell
+def __(metrics, plt, sns):
+    coverage_kdeplot = sns.kdeplot(data=metrics,x="coverage",hue="method", clip=(0,None), fill=True)
+    plt.tight_layout()
+    sns.despine(top=True,right=True)
+    plt.xlim([0.75,1])
+    coverage_kdeplot
+    return coverage_kdeplot,
 
 
 @app.cell
@@ -135,11 +198,11 @@ def __(
         sns.lineplot(ax=axs[0], x=_x_yhat, y=_yhat, alpha=0.5, label=r'$\hat{f}_t(X_t)$')
         #sns.lineplot(ax=axs[1], x=_x_s, y=_s.rolling(rolling, center=True).quantile(0.9), alpha=0.5, label='scores (rolling)')
         sns.lineplot(ax=axs[1], x=_x_s, y=_s, color='k', alpha=0.2, label='scores')
-        sns.lineplot(ax=axs[1], x=_x_s, y=_q_adaptive, alpha=0.8, label='adaptive')
+        sns.lineplot(ax=axs[1], x=_x_s, y=_q_adaptive, alpha=0.8, label='decay+adapt')
         sns.lineplot(ax=axs[1], x=_x_s, y=_q_decaying, alpha=0.8, label='decaying')
         sns.lineplot(ax=axs[1], x=_x_s, y=_q_fixed, alpha=0.8, label='fixed')
         sns.lineplot(ax=axs[1], x=_x_s, y=_q_dtACI, alpha=0.2, label='DTACI')
-        
+
         sns.despine(top=True, right=True)
         # Tilt x axis labels by 30 degrees
         axs[0].set_ylabel(f"y")
@@ -152,11 +215,6 @@ def __(
         plt.tight_layout()
         plt.show()
     return ax, axs, fig, horizon, rolling
-
-
-@app.cell
-def __():
-    return
 
 
 if __name__ == "__main__":

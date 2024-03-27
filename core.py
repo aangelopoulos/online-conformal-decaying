@@ -23,7 +23,7 @@ def get_online_quantile(scores, q_1, etas, alpha):
             q[t + 1] = q[t] - etas[t] * (alpha - err_t)
     return q
 
-def get_online_quantile_adaptive(scores, q_1, alpha, decay_rate=0.51, window_size=10, error_threshold_lower=0, error_threshold_upper=1):
+def get_online_quantile_decay_and_adapt(scores, q_1, alpha, decay_rate=0.51, window_size_lower=30, window_size_upper=10, error_threshold_lower=0, error_threshold_upper=1):
     """
     Computes the online quantile of a set of scores.
     :param scores: (np.array) The scores.
@@ -36,15 +36,18 @@ def get_online_quantile_adaptive(scores, q_1, alpha, decay_rate=0.51, window_siz
     q[0] = q_1
     etas = scores[0]*np.ones_like(scores)/(np.arange(1, len(scores)+1)**decay_rate)
     errs = np.zeros_like(scores)
-    counter = window_size
+    counter = min(window_size_upper, window_size_lower)
     for t in range(T):
         errs[t] = (scores[t] > q[t]).astype(float)
-        if (t==window_size+1) |((counter <= 0) & ((t - max(t-window_size, 0)) == window_size) & ((errs[t-window_size+1:t+1].mean() >= error_threshold_upper) | (errs[t-window_size+1:t+1].mean() <= error_threshold_lower))):
-            print(f"Restarting at time {t}, with local coverage {errs[t-window_size+1:t+1].mean()}")
-            # Restart etas.
-            Bhat = np.abs(scores[t-window_size+1:t+1]-q[t-window_size+1:t+1]).max()
-            etas[t:] = Bhat*np.ones_like(scores[t:])/(np.arange(1, len(scores[t:])+1)**decay_rate)
-            counter = window_size
+        if (t==window_size_upper+1) |((counter <= 0) & ((t - max(t-window_size_lower, 0)) == window_size_lower) & ((errs[t-window_size_upper+1:t+1].mean() >= error_threshold_upper) | (errs[t-window_size_lower+1:t+1].mean() <= error_threshold_lower))):
+            try:
+                print(f"Restarting at time {t}, with local coverage {errs[max(t-window_size_lower+1,0):t+1].mean()}")
+                # Restart etas.
+                Bhat = np.abs(scores[max(t-window_size_lower+1,0):t+1]-q[max(t-window_size_lower+1,0):t+1]).max()
+                etas[t:] = Bhat*np.ones_like(scores[t:])/(np.arange(1, len(scores[t:])+1)**decay_rate)
+                counter = window_size_lower
+            except:
+                pdb.set_trace()
         else:
             counter -= 1
         if t < T - 1:
